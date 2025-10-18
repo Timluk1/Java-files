@@ -1,0 +1,23 @@
+version: '3.8'
+
+networks:
+  production:
+
+services:
+  database:
+    image: postgres:13-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: auth
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - production
+
+volumes:
+  postgres-data:
+    driver: local

@@ -4,14 +4,19 @@ import org.example.dao.User;
 import org.example.services.AuthService;
 
 import javax.servlet.ServletException;
+import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.annotation.WebServlet;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
+import javax.servlet.http.*;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
 
 @WebServlet("/auth")
+@MultipartConfig
 public class LoginServlet extends HttpServlet {
 
     private final AuthService authService = new AuthService();
@@ -21,8 +26,8 @@ public class LoginServlet extends HttpServlet {
         req.setCharacterEncoding("UTF-8");
         resp.setContentType("text/plain; charset=UTF-8");
 
-        String username = req.getParameter("username");
-        String password = req.getParameter("password");
+        String username = readPartAsString(req.getPart("username"), req.getCharacterEncoding());
+        String password = readPartAsString(req.getPart("password"), req.getCharacterEncoding());
 
         try {
             User u = authService.authenticate(username, password);
@@ -41,6 +46,15 @@ public class LoginServlet extends HttpServlet {
         } catch (Exception e) {
             resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             resp.getWriter().write("error: " + e.getMessage());
+        }
+    }
+
+    private String readPartAsString(Part part, String charset) throws IOException {
+        if (part == null) return null;
+        Charset cs = charset != null ? Charset.forName(charset) : StandardCharsets.UTF_8;
+        try (InputStream is = part.getInputStream();
+             BufferedReader br = new BufferedReader(new InputStreamReader(is, cs))) {
+            return br.lines().collect(Collectors.joining("\n"));
         }
     }
 }

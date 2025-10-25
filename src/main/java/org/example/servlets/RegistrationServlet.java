@@ -17,18 +17,22 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import org.example.util.CloudinaryUtil;
 import java.util.stream.Collectors;
+import com.cloudinary.Cloudinary;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 
 @WebServlet("/register")
 @MultipartConfig
 public class RegistrationServlet extends HttpServlet {
-    private static final String FILE_PREFIX = System.getProperty("java.io.tmpdir");
-
+    public static final String FILE_PREFIX = "/tmp";
+    public static final int DIRECTORIES_COUNT = 100;
     private final AuthService authService = new AuthService();
+    private final Cloudinary cloudinaryUtil = CloudinaryUtil.getInstance();
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -38,44 +42,57 @@ public class RegistrationServlet extends HttpServlet {
         String username = null;
         String password = null;
         String email = null;
-        String imageUrl = null;
+        String imageUrl = "";
 
         String contentType = req.getContentType();
         Part part = null;
 
         if (contentType != null && contentType.toLowerCase().startsWith("multipart/")) {
-            // request is multipart/form-data (Postman "form-data"). Read text parts explicitly.
+            // multipart/form-data (e.g. Postman form-data)
             username = readPartAsString(req.getPart("username"), req.getCharacterEncoding());
             password = readPartAsString(req.getPart("password"), req.getCharacterEncoding());
             email = readPartAsString(req.getPart("email"), req.getCharacterEncoding());
             part = req.getPart("file");
         } else {
-            // normal form submit (application/x-www-form-urlencoded)
+            // application/x-www-form-urlencoded
             username = req.getParameter("username");
             password = req.getParameter("password");
             email = req.getParameter("email");
-            // no file support for urlencoded
         }
 
         if (part != null && part.getSize() > 0) {
-            String submitted = part.getSubmittedFileName();
-            String fileName = submitted == null ? "upload.bin" : Paths.get(submitted).getFileName().toString();
+            String filename = Paths.get(part.getSubmittedFileName()).getFileName().toString();
 
-            Path target = Paths.get(FILE_PREFIX).resolve(fileName);
+            File file = new File(FILE_PREFIX + File.separator
+                    + Math.abs(filename.hashCode() % DIRECTORIES_COUNT) + File.separator + filename);
 
-            Path parent = target.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
+            InputStream content = part.getInputStream();
+            file.getParentFile().mkdirs();
+            file.createNewFile();
+            FileOutputStream outputStream = new FileOutputStream(file);
+            byte[] buffer = new byte[content.available()];
+            content.read(buffer);
+            outputStream.write(buffer);
+            outputStream.close();
 
-            try (InputStream content = part.getInputStream()) {
-                Files.copy(content, target, StandardCopyOption.REPLACE_EXISTING);
-                imageUrl = target.toAbsolutePath().toString();
-            } catch (IOException e) {
-                resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                resp.getWriter().write("error saving file: " + e.getMessage());
-                return;
-            }
+            Map<?, ?> fileUpload = cloudinaryUtil.uploader().upload(file, new HashMap());
+            imageUrl = (String) fileUpload.get("secure_url");
+        }
+
+        if (username == null || username.trim().isEmpty()) {
+            resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            resp.getWriter().write("missing_username");
+            return;
+        }
+        if (password == null || password.length() < 6) {
+            resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            resp.getWriter().write("password_too_short");
+            return;
+        }
+        if (email == null || email.trim().isEmpty()) {
+            resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            resp.getWriter().write("missing_email");
+            return;
         }
 
         try {
